@@ -1,0 +1,31 @@
+name: gitleaks
+
+on:
+  # `push:` was bare, so every push to a PR branch fired a push run AND a
+  # pull_request run: two workflow runs reporting the same required `scan`
+  # check. Branch pushes are still scanned, through the pull_request event.
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history so gitleaks can scan more than HEAD on push.
+          fetch-depth: 0
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Use the repo's .gitleaks.toml as authoritative config.
+          GITLEAKS_CONFIG: .gitleaks.toml

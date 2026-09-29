@@ -1,0 +1,13 @@
+{
+  "id": "tuya",
+  "type": "integration",
+  "name": "Tuya (local)",
+  "version": "0.0.0",
+  "description": "Tuya devices over the local network, no cloud at runtime. First supported product: the dé EV charger",
+  "icon": "PlugZap",
+  "repo": "mchacher/sowel-plugin-tuya",
+  "author": "mchacher",
+  "sowelVersion": ">=1.71.0",
+  "settings": [],
+  "apiVersion": 2
+}

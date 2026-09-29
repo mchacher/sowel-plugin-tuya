@@ -1,0 +1,88 @@
+# Sowel gitleaks config.
+# Loaded from the repo root by both the pre-commit hook and the
+# .github/workflows/gitleaks.yml CI job. Uses the gitleaks default
+# detectors plus a few Sowel-specific allowlist + custom rules.
+
+# Inherit every built-in detector (~150 patterns: AWS, GitHub,
+# Stripe, Slack, generic high-entropy, etc.).
+[extend]
+useDefault = true
+
+# ----------------------------------------------------------------
+# Sowel-specific custom rules
+# ----------------------------------------------------------------
+
+# Sowel API tokens (spec 089 prefix). Matching `swl_` + 64 hex chars.
+[[rules]]
+id = "sowel-api-token"
+description = "Sowel API token (swl_ prefix, spec 089)"
+regex = '''\bswl_[0-9a-f]{64}\b'''
+tags = ["sowel", "api-token"]
+
+# Legacy API token prefixes still recognized by auth-middleware.
+[[rules]]
+id = "sowel-legacy-api-token"
+description = "Sowel legacy API token (wch_ or cbl_ prefix)"
+regex = '''\b(wch|cbl)_[0-9a-f]{32,}\b'''
+tags = ["sowel", "api-token", "legacy"]
+
+# Sowel SQLite backup file payloads — backups dumped as raw JSON
+# include integration credentials in plaintext. Catch the obvious
+# shape (a literal `integration.<plugin>.<key>` row alongside a
+# non-empty value) so a copy/pasted backup row never lands in the
+# repo, even outside a `*backup*.json` filename.
+[[rules]]
+id = "sowel-integration-setting-with-value"
+description = "Sowel integration setting committed with a non-empty value"
+regex = '''integration\.[a-z_-]+\.(client_secret|refresh_token|access_token|password|api_key|mqtt_password|token|secret)\s*[:=]\s*['\"][^'\"\s]{8,}'''
+tags = ["sowel", "secrets-at-rest"]
+
+# Tuya local key (16 printable chars) — the one secret this plugin holds.
+# Read from settings at runtime; never in a fixture, a test or a log line.
+[[rules]]
+id = "tuya-local-key"
+description = "Tuya device local_key committed with a value"
+regex = '''(?i)local_?key['\"]?\s*[:=]\s*['\"][^'\"\s]{16}['\"]'''
+tags = ["tuya", "secrets-at-rest"]
+
+# Tuya IoT platform Access Secret (32 hex/alnum chars).
+[[rules]]
+id = "tuya-access-secret"
+description = "Tuya IoT Access Secret committed with a value"
+regex = '''(?i)(access_?secret|client_?secret)['\"]?\s*[:=]\s*['\"][0-9a-z]{32}['\"]'''
+tags = ["tuya", "secrets-at-rest"]
+
+# ----------------------------------------------------------------
+# Allowlist — false-positive suppression
+# ----------------------------------------------------------------
+
+[allowlist]
+description = "Paths and patterns gitleaks should ignore"
+
+paths = [
+  # Built UI bundle. Generated artifact, the strings `client_secret`
+  # etc. are field names in OAuth flows, not values.
+  '''ui-dist/.*''',
+  # node_modules carries countless example tokens in test fixtures.
+  '''node_modules/.*''',
+  # The docs site build output (mkdocs-build) under site/.
+  '''site/.*''',
+  # Plugin sources downloaded at runtime under plugins/<id>/ are
+  # not part of the Sowel repo proper.
+  '''plugins/[^/]+/.*''',
+  # Test fixtures whose secrets are obviously fake (placeholders).
+  '''.*__fixtures__/.*''',
+  # MkDocs Playwright snapshots — page state, no credentials.
+  '''\.playwright-mcp/.*''',
+]
+
+# Specific values that gitleaks would otherwise flag but are
+# documented as safe (e.g. dev-only defaults in compose files).
+regexes = [
+  # InfluxDB default admin token shipped in docker-compose.yml —
+  # documented as a dev placeholder, replaced on first launch.
+  '''sowel-dev-token''',
+  # The default InfluxDB token constant in src/config.ts is
+  # explicitly REDACTED in the codebase.
+  '''REDACTED_INFLUXDB_TOKEN''',
+]
