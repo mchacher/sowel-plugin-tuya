@@ -136,12 +136,24 @@ Not published (spec non-goals or meaning not established): 103 self-test, 106 ch
 | `currentSetpoint`   | number  | `generic`            | A    | DP 150                                                            |
 | `maxCurrent`        | number  | `generic`            | A    | DP 152                                                            |
 | `plugInAction`      | enum    | `generic`            | —    | DP 154: 0 `prompt`, 1 `charge`, 2 `idle`                          |
+| `energy`            | number  | `energy`             | Wh   | Increment from the session counter (FR-19), stateful, see below   |
 | `sessionEnergy`     | number  | `generic`            | kWh  | DP 102 `e` / 10 (running session)                                 |
 | `sessionDuration`   | number  | `generic`            | s    | DP 102 `d` / 10, truncated                                        |
 | `lastSessionEnergy` | number  | `generic`            | kWh  | DP 105 `c` / 10                                                   |
 | `alarm`             | string  | `generic`            | —    | DP 104 as text; `""` when empty or `"0"`                          |
 
-Power is derived from voltage × current rather than read from the third array element, which is quantised to 0.1 kW (reference measurement: 227.0 V × 8.7 A reported as 19, i.e. 1.9 kW, for 1 975 W). `sessionEnergy` is `generic`, not `energy`: the core's `energy` category is an additive delta in Wh, and a per-session counter that resets would be summed into nonsense. kWh history comes from the core integrating `power`.
+Power is derived from voltage × current rather than read from the third array element, which is quantised to 0.1 kW (reference measurement: 227.0 V × 8.7 A reported as 19, i.e. 1.9 kW, for 1 975 W). `sessionEnergy` is `generic`: it is a counter that resets every session, shown as information. The history is carried by `energy`, in increments.
+
+### Energy increments
+
+`decode` stays a pure function of one snapshot. The increment needs memory, so the profile exposes a second pure function, a reducer the session calls after each decode:
+
+```ts
+interface EnergyState { counter: number; lastRecord: string | null } // counter in tenths of kWh; record = raw DP 105
+energyStep(prev: EnergyState | null, dps): { deltaWh: number; next: EnergyState } | null
+```
+
+`null` when DP 102 has no `e` (state unchanged). `prev === null` (first read after start) → `deltaWh` 0, baseline only. Otherwise the rules of spec FR-19. The session holds the state in memory only; a restart re-baselines, by design. `energy` is sent with every non-zero `deltaWh`, outside the changed-keys diff (FR-20), and without `sourceTimestamp`, so the core's history writer folds it into its per-minute accumulator.
 
 ### Orders
 

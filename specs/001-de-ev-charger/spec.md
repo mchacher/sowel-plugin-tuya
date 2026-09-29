@@ -27,7 +27,7 @@ This spec is the first feature of `sowel-plugin-tuya`: a local Tuya transport th
 - **Obtaining the `local_key`.** Documented (Tuya IoT platform, or `tinytuya wizard`), not automated. No Tuya cloud credential is stored by the plugin.
 - **Other dé models.** The round single-button model and the 11 kW three-phase model have different or unconfirmed DP layouts. They are refused, not guessed.
 - **The charger's own schedule (DP 151), NFC (DP 155), reboot (DP 142), self-test and history detail.** Scheduling belongs to Sowel's recipes; the others add no value to charging from Sowel. Not published.
-- **Energy counting.** The plugin publishes instantaneous power; turning it into kWh history is the core's job (power-only submeter integration). The session counter is published as information, not as the `energy` category, which the core reads as additive deltas.
+- **Energy from power.** The plugin does not integrate power into energy: the charger has its own meter, and its counter is what the plugin turns into energy increments (FR-19). Instantaneous power is published for the live view and the arbiter.
 - **Any automation**: surplus following, off-peak charging, target energy. That is the recipe, a later step.
 - **The `ev_charger` equipment type.** A core issue, argued on its own merits (see Dependencies).
 
@@ -72,6 +72,17 @@ This spec is the first feature of `sowel-plugin-tuya`: a local Tuya transport th
 
 - **FR-18** The profile's decoding is pinned by fixtures. Before the device is available, the fixtures are the payloads of the reference integration's test suite (source and commit named in the fixture file). A real capture of the owner's device in three states — unplugged, plugged and idle, charging — is added before the first release (v0.1.0), and any divergence from the reference is fixed in the profile and recorded in this spec.
 
+### Energy
+
+- **FR-19** The plugin publishes `energy`, in Wh, as **increments** — the core's `energy` category is additive: each value is added to the history, which is how other metering plugins already report. The increment is computed from the charger's own session counter (DP 102 `e`, tenths of kWh), so the history does not depend on how often power is sampled, and a connection loss during a charge is caught up on reconnect:
+  - same session, counter up: increment = new − previous;
+  - counter lower than before (a new session started): increment = the new counter value, plus the unseen end of the previous session when the completed-session record (DP 105) changed since last seen: `max(0, DP 105 c − previous)`;
+  - first read after the plugin starts: no increment, the counter is only taken as the baseline (the session so far may already be in the history);
+  - an increment is never negative, never published when zero, and DP 105 is never credited twice (the last record seen is remembered).
+- **FR-20** Each increment is published even when equal to the previous one: `energy` bypasses the "publish only what changed" rule of FR-10.
+- **FR-21** `power` (W) stays published for the live view and the arbiter. The core does not also integrate it: an equipment with an `energy` binding is not a power-only submeter (`power-submeter-integrator.ts`), so there is no double count.
+- Known limit, to confirm on the hardware walk: the counter's resolution is 0.1 kWh, so the history moves in 100 Wh steps (about one every 3 min at 2 kW) — exact in hourly and daily totals, stepped at minute scale. And if a connection loss spans the end of one session and a new session that has already passed the old counter value, no drop is seen; the capture will show whether DP 105 alone can tell it apart.
+
 ## Dependencies
 
 - **Core issue to open: an `ev_charger` equipment type.** Deferrable by default for the arbiter (spec 140's class table already lists "EV" as deferrable), a card with state, power, current setpoint and a start/stop control, and a binding convention for `power`, `charge` and `current`. Until it exists, the charger can be bound to a `switch` equipment for tests; it is not a blocker for this spec.
@@ -81,6 +92,7 @@ This spec is the first feature of `sowel-plugin-tuya`: a local Tuya transport th
 
 - [ ] With the three required settings, the plugin connects, publishes one device with the readings and orders of the DP map, and marks it `online`.
 - [ ] With a missing required setting, the status is `not_configured` and no connection is attempted.
+- [ ] `energy` increments sum to the charger's counter across a session, a new session, a reconnection mid-charge and a plugin restart (test plan).
 - [ ] Every scenario of the plan's test plan passes, against a fake transport; no test opens a socket.
 - [ ] A payload from a device lacking a required DP publishes nothing, sets `error`, and logs the DP ids.
 - [ ] After a charge ends (DP 109 leaves `WORKING`, DP 140 false), `power` and `current` read 0 even if DP 102 still carries the last measurement.

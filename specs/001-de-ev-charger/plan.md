@@ -45,7 +45,21 @@ Timers in session tests use Vitest fake timers. The transport adapter (step 7) i
 | `encode("current", "abc")`                                                  | refused                                                                                   |
 | `encode("plugInAction", "idle")`                                            | `{ "154": 2 }`                                                                            |
 | `encode("plugInAction", "nope")`, `encode("unknown", 1)`                    | refused                                                                                   |
-| `discovery("abc")`                                                          | friendlyName `abc`, manufacturer `dé`, the 14 readings and 3 orders with their categories |
+| `discovery("abc")`                                                          | friendlyName `abc`, manufacturer `dé`, the 15 readings and 3 orders with their categories |
+
+### `src/profiles/depow-v2.test.ts` — `energyStep`
+
+| Scenario                                                                  | Expected                                    |
+| ------------------------------------------------------------------------- | ------------------------------------------- |
+| First read, counter 52                                                    | `deltaWh` 0, baseline 52                    |
+| 52 → 53 → 55                                                              | 100, then 200                               |
+| 55 → 55                                                                   | 0                                           |
+| 55 → 3, DP 105 unchanged                                                  | 300                                         |
+| 55 → 3, DP 105 changed to `c` 58 (end of session unseen during an outage) | 300 + 300 = 600                             |
+| DP 105 changed to `c` 50, below the last counter 55                       | no credit for it (`max(0, …)`), no negative |
+| Same DP 105 seen again on the next snapshot                               | not credited twice                          |
+| Snapshot without `e`                                                      | `null`, state unchanged                     |
+| A full session replayed from fixtures, then a new one                     | sum of increments = sum of session totals   |
 
 ### `src/config.test.ts`
 
