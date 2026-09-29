@@ -59,7 +59,7 @@ interface TuyaTransport {
 type TransportErrorKind = "unreachable" | "refused" | "undecryptable" | "timeout" | "other";
 ```
 
-`TuyapiTransport` wraps `new TuyAPI({ id, key, ip, version, issueGetOnConnect: false })`: `getAll` is `get({ schema: true })`, `set` is `set({ multiple: true, data })`, `dps` is the union of its `data` and `dp-refresh` events (payload `.dps`). It classifies errors into `TransportErrorKind` from the socket error code (`ETIMEDOUT`/`EHOSTUNREACH` → unreachable, `ECONNREFUSED` → refused) and from decryption failures (GCM authentication or JSON parse of a decrypted frame → undecryptable). The classification is a pure function, tested on the error shapes `tuyapi` produces.
+`TuyapiTransport` creates a fresh `new TuyAPI({ id, key, ip, version, issueGetOnConnect: false })` on every `connect`, and retires the previous one for good (socket destroyed, listeners removed, its `connect` made to fail — tuyapi's `_send` reconnects on its own, and a stuck `connect` is cached and handed to the next caller, so an instance cannot be reused after a failure). `connect` is bounded to 10 s, `getAll` and `set` to 8 s: tuyapi's `get` and the 3.5 negotiation can otherwise wait forever. Then: `getAll` is `get({ schema: true })`, `set` is `set({ multiple: true, data })`, `dps` is the union of its `data` and `dp-refresh` events (payload `.dps`). It classifies errors into `TransportErrorKind` from the socket error code (`ETIMEDOUT`/`EHOSTUNREACH` → unreachable, `ECONNREFUSED` → refused) and from decryption failures (GCM authentication or JSON parse of a decrypted frame → undecryptable). The classification is a pure function, tested on the error shapes `tuyapi` produces.
 
 ## Session
 
@@ -78,7 +78,7 @@ start ─► connect ─ok─► getAll ─► profile.match? ─no─► mismat
                                 or after 2 failed polls; transition logged once, with its TransportErrorKind
 ```
 
-- **Queue**: a promise chain per session. `getAll`, each `set` and each read-back are enqueued; nothing reaches the transport outside it.
+- **Queue**: a promise chain per session. `getAll`, each `set` and each read-back are enqueued; nothing reaches the transport outside it. Every queued operation, and `connect`, is also bounded to 20 s by the session itself, so a transport that never settles cannot wedge the queue; once stopped, the queue refuses new work.
 - **Publish**: `decode` returns the full payload; the session sends `updateDeviceData` with the keys whose value changed since the last publish (the first publish sends all).
 - **Status**: `updateDeviceStatus(online|offline)` on transitions only.
 - **Verified write**: `executeOrder` → `profile.encode` (refusal → reject) → offline? reject → enqueue `set` → then up to 8 enqueued `getAll` one second apart until every written DP equals the expected value (numbers compared as numbers, booleans as booleans) → resolve; else reject `"not reflected after 8 s"`. The read-backs also refresh the cache and publish.
@@ -176,7 +176,7 @@ energyStep(prev: EnergyState | null, dps): { deltaWh: number; next: EnergyState 
 
 ## Capture tool
 
-`src/tools/capture.ts`, built to `dist/tools/capture.js`, uses `TuyapiTransport` directly. Output is one JSON line per snapshot: `{ "at": ISO, "label": "...", "dps": {...} }`. It writes to stdout only; the owner redirects it to a file, reviews it and copies it under `src/profiles/__fixtures__/depow-v2/`. DPs carry no secret; the device id is replaced by `"<device-id>"` before a capture is committed. `console` is allowed in this file only (an ESLint override), as it is a CLI.
+`src/tools/capture.ts`, built to `dist/tools/capture.js`, uses `TuyapiTransport` directly. Output is one JSON line per snapshot: `{ "at": ISO, "label": "...", "dps": {...} }`, and `"push": true` on the lines the device pushed on its own. It writes to stdout only; the owner redirects it to a file, reviews it and copies it under `src/profiles/__fixtures__/depow-v2/`. DPs carry no secret; the device id is replaced by `"<device-id>"` before a capture is committed. `console` is allowed in this file only (an ESLint override), as it is a CLI.
 
 ## File changes
 

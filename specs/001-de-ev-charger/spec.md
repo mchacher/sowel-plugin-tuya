@@ -36,7 +36,7 @@ This spec is the first feature of `sowel-plugin-tuya`: a local Tuya transport th
 ### Configuration
 
 - **FR-1** The plugin settings are: `host` (IP address, required), `device_id` (Tuya device id, required), `local_key` (password, required), `protocol_version` (default `3.5`, accepted `3.3`, `3.4`, `3.5`), `poll_interval` (seconds, default 30, clamped to 10-300). The plugin is configured when the three required settings are non-empty.
-- **FR-2** `local_key` is never written to any log line, at any level, in whole or in part, nor to any published reading, nor to an error message returned by `executeOrder`.
+- **FR-2** `local_key` must be 16 characters; any other length is a settings error (plugin status `error`, the log gives the length, never the key). It is never written to any log line, at any level, in whole or in part, nor to any published reading, nor to an error message returned by `executeOrder`.
 
 ### Connection
 
@@ -48,7 +48,7 @@ This spec is the first feature of `sowel-plugin-tuya`: a local Tuya transport th
 
 ### Product profile
 
-- **FR-8** On the first successful read, the plugin checks the DP set against the `depow_v2` profile: DPs 101, 102, 109, 140 and 150 must be present. If they are not, the device is not published, the plugin status is `error`, and one `error` log line lists the DP ids the device did report (ids and value types, not values), so the user can open an issue with it.
+- **FR-8** On the first successful reads, the plugin checks the DP set against the `depow_v2` profile: DPs 101, 102, 109 and 150 must be present. DP 140 is not required: the reference capture of this very model does not report it in a full read (nor DP 154), so its reading and the `charge` echo only appear once the device reports it — to confirm on the hardware walk. If two consecutive full reads lack one of them (a single read may omit DPs), the device is not published, the plugin status is `error`, and one `error` log line lists the DP ids the device did report (ids and value types, not values), so the user can open an issue with it.
 - **FR-9** A matched device is published once through discovery with the readings and orders of the architecture's DP map, `manufacturer: "dé"`, `model: "Portable EV charger 3.7 kW"`. Its source id is the Tuya `device_id`, stable across IP changes and restarts.
 
 ### Readings
@@ -78,10 +78,10 @@ This spec is the first feature of `sowel-plugin-tuya`: a local Tuya transport th
   - same session, counter up: increment = new − previous;
   - counter lower than before (a new session started): increment = the new counter value, plus the unseen end of the previous session when the completed-session record (DP 105) changed since last seen: `max(0, DP 105 c − previous)`;
   - first read after the plugin starts: no increment, the counter is only taken as the baseline (the session so far may already be in the history);
-  - an increment is never negative, never published when zero, and DP 105 is never credited twice (the last record seen is remembered).
+  - an increment is never negative, never published when zero, and DP 105 is never credited twice. The record is taken at the baseline and at each drop only, so a record that arrives before the counter resets is still recognised as new at the reset.
 - **FR-20** Each increment is published even when equal to the previous one: `energy` bypasses the "publish only what changed" rule of FR-10.
 - **FR-21** `power` (W) stays published for the live view and the arbiter. The core does not also integrate it: an equipment with an `energy` binding is not a power-only submeter (`power-submeter-integrator.ts`), so there is no double count.
-- Known limit, to confirm on the hardware walk: the counter's resolution is 0.1 kWh, so the history moves in 100 Wh steps (about one every 3 min at 2 kW) — exact in hourly and daily totals, stepped at minute scale. And if a connection loss spans the end of one session and a new session that has already passed the old counter value, no drop is seen; the capture will show whether DP 105 alone can tell it apart.
+- Known limit, to confirm on the hardware walk: the counter's resolution is 0.1 kWh, so the history moves in 100 Wh steps (about one every 3 min at 2 kW) — exact in hourly and daily totals, stepped at minute scale. And if a connection loss spans the end of one session and a new session that has already passed the old counter value, no drop is seen; the capture will show whether DP 105 alone can tell it apart. Conversely, a momentary counter glitch to 0 mid-session would read as a new session and credit the climb back a second time; the walk checks the counter never does that before any guard is added.
 
 ## Dependencies
 
@@ -94,7 +94,7 @@ This spec is the first feature of `sowel-plugin-tuya`: a local Tuya transport th
 - [ ] With a missing required setting, the status is `not_configured` and no connection is attempted.
 - [ ] `energy` increments sum to the charger's counter across a session, a new session, a reconnection mid-charge and a plugin restart (test plan).
 - [ ] Every scenario of the plan's test plan passes, against a fake transport; no test opens a socket.
-- [ ] A payload from a device lacking a required DP publishes nothing, sets `error`, and logs the DP ids.
+- [ ] A payload from a device lacking a required DP (101, 102, 109, 150) publishes nothing, sets `error`, and logs the DP ids.
 - [ ] After a charge ends (DP 109 leaves `WORKING`, DP 140 false), `power` and `current` read 0 even if DP 102 still carries the last measurement.
 - [ ] `charge`, `current` and `plugInAction` orders resolve when reflected, reject when not, when offline, or when invalid.
 - [ ] No log line, reading or error message contains the `local_key` (tested by running the scenarios with a sentinel key and scanning every logged argument).

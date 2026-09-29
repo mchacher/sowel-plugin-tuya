@@ -2,15 +2,15 @@
 
 ## Steps
 
-- [ ] 1. `src/profiles/profile.ts`: `ProductProfile` interface.
-- [ ] 2. `src/profiles/depow-v2.ts`: status map, DP 102/105 parsing, `match`, `discovery`, `decode`, `encode`. Fixtures from the reference test suite in `src/profiles/__fixtures__/depow-v2/reference.json`, source and commit in a `_source` field.
-- [ ] 3. `src/config.ts`: settings → `DeviceConfig` (required keys, protocol version, poll interval clamp).
-- [ ] 4. `src/transport/transport.ts`: interface, `TransportError`, `classifyError`. `src/transport/fake-transport.ts`: scripted snapshots, pushes, failures, write echo on or off.
-- [ ] 5. `src/session/backoff.ts` and `src/session/device-session.ts`: queue, cache, poll, reconnect, online/offline, match, publish diff, verified write.
-- [ ] 6. `src/index.ts`: settings schema, one session, status, `executeOrder`.
-- [ ] 7. `npm install tuyapi@^7.7.1`; `src/transport/tuyapi-transport.ts`.
-- [ ] 8. `src/tools/capture.ts`, ESLint override for `src/tools/**`.
-- [ ] 9. `manifest.json` settings; README (setup, getting the `local_key`, DHCP reservation, the app's local slot, `DEBUG` warning, supported products); CLAUDE.md `executeOrder` rule.
+- [x] 1. `src/profiles/profile.ts`: `ProductProfile` interface.
+- [x] 2. `src/profiles/depow-v2.ts`: status map, DP 102/105 parsing, `match`, `discovery`, `decode`, `encode`. Fixtures from the reference test suite in `src/profiles/__fixtures__/depow-v2/reference.json`, source and commit in a `_source` field.
+- [x] 3. `src/config.ts`: settings → `DeviceConfig` (required keys, protocol version, poll interval clamp).
+- [x] 4. `src/transport/transport.ts`: interface, `TransportError`, `classifyError`. `src/transport/fake-transport.ts`: scripted snapshots, pushes, failures, write echo on or off.
+- [x] 5. `src/session/backoff.ts` and `src/session/device-session.ts`: queue, cache, poll, reconnect, online/offline, match, publish diff, verified write.
+- [x] 6. `src/index.ts`: settings schema, one session, status, `executeOrder`.
+- [x] 7. `npm install tuyapi@^7.7.1`; `src/transport/tuyapi-transport.ts`.
+- [x] 8. `src/tools/capture.ts`, ESLint override for `src/tools/**`.
+- [x] 9. `manifest.json` settings; README (setup, getting the `local_key`, DHCP reservation, the app's local slot, `DEBUG` warning, supported products); CLAUDE.md `executeOrder` rule.
 - [ ] 10. Open the core issue for the `ev_charger` equipment type and link it from this spec.
 - [ ] 11. Hardware walk and real captures (before v0.1.0, may land in a follow-up PR against this spec).
 
@@ -22,8 +22,8 @@ Timers in session tests use Vitest fake timers. The transport adapter (step 7) i
 
 | Scenario                                                                    | Expected                                                                                  |
 | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `match` on the reference snapshot                                           | `true`                                                                                    |
-| `match` on a snapshot missing DP 140 (or 101, 102, 109, 150)                | `false`                                                                                   |
+| `match` on the reference snapshot (no DP 140 in it)                         | `true`                                                                                    |
+| `match` on a snapshot missing DP 101, 102, 109 or 150                       | `false`                                                                                   |
 | `decode` charging snapshot (109 `WORKING`, L1 `[2270,87,19]`)               | `power` 1975, `current` 8.7, `voltage` 227, `status` `charging`, `vehicle` `charging`     |
 | `decode` after session (109 `STOP`, 140 false, DP 102 still `[2270,87,19]`) | `power` 0, `current` 0, `voltage` 227, `status` `charged`, `vehicle` `connected`          |
 | `decode` 140 `true` with 109 `IDLEINS`                                      | treated as active: `power` from DP 102                                                    |
@@ -85,7 +85,7 @@ Timers in session tests use Vitest fake timers. The transport adapter (step 7) i
 | Scenario                                      | Expected                                                                          |
 | --------------------------------------------- | --------------------------------------------------------------------------------- |
 | Start, reference snapshot                     | one `upsertFromDiscovery`, one full `updateDeviceData`, status `online`           |
-| Snapshot missing DP 140                       | no discovery, no data, state `mismatch`, one `error` log naming DP ids, no values |
+| Snapshot missing DP 150                       | no discovery, no data, state `mismatch`, one `error` log naming DP ids, no values |
 | Push of DP 102 only                           | merged; only changed keys published                                               |
 | Push with no change                           | nothing published                                                                 |
 | Poll every `poll_interval`                    | `getAll` called on schedule                                                       |

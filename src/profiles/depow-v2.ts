@@ -1,0 +1,299 @@
+/**
+ * Profile `depow_v2`: the dé portable EV charger, 3.7 kW, two buttons.
+ *
+ * DP map and scales from lachand/EV_charger@3fd6c18 (const.py,
+ * tuya_ev_charger.py), measured there on this model; see spec 001,
+ * architecture "DP map — depow_v2". DPs whose meaning is not established are
+ * deliberately not decoded.
+ */
+
+import type { DiscoveredDevice } from "../sowel-api.js";
+import type { Dps, EncodeResult, EnergyState, EnergyStep, ProductProfile } from "./profile.js";
+
+const DP = {
+  workState: "101",
+  metrics: "102",
+  alarm: "104",
+  lastSession: "105",
+  status: "109",
+  charge: "140",
+  currentSetpoint: "150",
+  maxCurrent: "152",
+  plugInAction: "154",
+} as const;
+
+const REQUIRED_DPS = [DP.workState, DP.metrics, DP.status, DP.currentSetpoint] as const;
+
+/** Raw DP 109 → published status (tuya_local's map for product gxrtu5vljdthtd3g). */
+const STATUS_MAP: Record<string, string> = {
+  SLEEP: "sleep",
+  IDLE: "idle",
+  IDLEINS: "plugged_in",
+  WORKING: "charging",
+  WAIT: "waiting",
+  ERRORPAUSE: "fault",
+  PAUSE: "paused",
+  STOP: "charged",
+};
+const STATUS_VALUES = [...Object.values(STATUS_MAP), "unknown"];
+
+/** Statuses meaning a vehicle is plugged in but not drawing (IEC 61851 state B). */
+const CONNECTED_STATUSES = new Set(["plugged_in", "waiting", "paused", "charged", "fault"]);
+/** Above this the charger is really delivering: WORKING can linger after a full charge. */
+const CHARGING_POWER_W = 100;
+
+const PLUG_IN_ACTIONS = ["prompt", "charge", "idle"] as const;
+
+/** IEC 61851 minimum; the pilot signal defines nothing below. */
+const MIN_CURRENT_A = 6;
+/** Ceiling when the device does not report DP 152. */
+const DEFAULT_MAX_CURRENT_A = 16;
+
+export const VEHICLE_VALUES = ["disconnected", "connected", "charging"] as const;
+
+function parseJsonObject(raw: unknown): Record<string, unknown> | null {
+  if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>;
+  }
+  if (typeof raw !== "string") return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function toNumber(raw: unknown): number | null {
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw === "string" && raw.trim() !== "") {
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+function toBoolean(raw: unknown): boolean | null {
+  if (typeof raw === "boolean") return raw;
+  if (raw === 1 || raw === "1" || raw === "true") return true;
+  if (raw === 0 || raw === "0" || raw === "false") return false;
+  return null;
+}
+
+function round(value: number, digits: number): number {
+  const f = 10 ** digits;
+  return Math.round(value * f) / f;
+}
+
+function maxCurrentOf(dps: Dps): number {
+  const max = toNumber(dps[DP.maxCurrent]);
+  return max !== null && max >= MIN_CURRENT_A ? max : DEFAULT_MAX_CURRENT_A;
+}
+
+/** A charge is active when DP 109 says WORKING or DP 140 says true (spec FR-11). */
+function isCharging(dps: Dps): boolean {
+  const raw = dps[DP.status];
+  const status = typeof raw === "string" ? raw.trim().toUpperCase() : "";
+  return status === "WORKING" || toBoolean(dps[DP.charge]) === true;
+}
+
+function decodeStatus(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  return STATUS_MAP[raw.trim().toUpperCase()] ?? "unknown";
+}
+
+function decodeVehicle(status: string | undefined, powerW: number | undefined): string {
+  if ((powerW ?? 0) >= CHARGING_POWER_W) return "charging";
+  if (status === "charging" || (status !== undefined && CONNECTED_STATUSES.has(status))) {
+    return "connected";
+  }
+  return "disconnected";
+}
+
+export const depowV2: ProductProfile = {
+  id: "depow_v2",
+  manufacturer: "dé",
+  model: "Portable EV charger 3.7 kW",
+  requiredDps: REQUIRED_DPS,
+
+  match(dps: Dps): boolean {
+    return REQUIRED_DPS.every((id) => dps[id] !== undefined && dps[id] !== null);
+  },
+
+  discovery(sourceId: string): DiscoveredDevice {
+    return {
+      friendlyName: sourceId,
+      manufacturer: this.manufacturer,
+      model: this.model,
+      powerSource: "mains",
+      data: [
+        { key: "status", type: "enum", category: "generic", enumValues: STATUS_VALUES },
+        { key: "vehicle", type: "enum", category: "generic", enumValues: [...VEHICLE_VALUES] },
+        { key: "charge", type: "boolean", category: "appliance_state" },
+        { key: "power", type: "number", category: "power", unit: "W" },
+        { key: "energy", type: "number", category: "energy", unit: "Wh" },
+        { key: "current", type: "number", category: "current", unit: "A" },
+        { key: "voltage", type: "number", category: "voltage", unit: "V" },
+        { key: "temperature", type: "number", category: "temperature_device", unit: "°C" },
+        { key: "currentSetpoint", type: "number", category: "generic", unit: "A" },
+        { key: "maxCurrent", type: "number", category: "generic", unit: "A" },
+        {
+          key: "plugInAction",
+          type: "enum",
+          category: "generic",
+          enumValues: [...PLUG_IN_ACTIONS],
+        },
+        { key: "sessionEnergy", type: "number", category: "generic", unit: "kWh" },
+        { key: "sessionDuration", type: "number", category: "generic", unit: "s" },
+        { key: "lastSessionEnergy", type: "number", category: "generic", unit: "kWh" },
+        { key: "alarm", type: "string", category: "generic" },
+      ],
+      orders: [
+        { key: "charge", type: "boolean", category: "toggle_power" },
+        {
+          key: "current",
+          type: "number",
+          min: MIN_CURRENT_A,
+          max: DEFAULT_MAX_CURRENT_A,
+          unit: "A",
+        },
+        { key: "plugInAction", type: "enum", enumValues: [...PLUG_IN_ACTIONS] },
+      ],
+    };
+  },
+
+  decode(dps: Dps): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+
+    const status = decodeStatus(dps[DP.status]);
+    if (status !== undefined) out.status = status;
+
+    const charge = toBoolean(dps[DP.charge]);
+    if (charge !== null) out.charge = charge;
+
+    let powerW: number | undefined;
+    const metrics = parseJsonObject(dps[DP.metrics]);
+    if (metrics) {
+      const l1 = metrics.L1;
+      if (Array.isArray(l1) && l1.length >= 3) {
+        const volts = toNumber(l1[0]);
+        const amps = toNumber(l1[1]);
+        if (volts !== null && amps !== null) {
+          const charging = isCharging(dps);
+          const voltage = round(volts / 10, 1);
+          const current = charging ? round(amps / 10, 1) : 0;
+          powerW = Math.round(voltage * current);
+          out.voltage = voltage;
+          out.current = current;
+          out.power = powerW;
+        }
+      }
+      const t = toNumber(metrics.t);
+      if (t !== null) out.temperature = round(t / 10, 1);
+      const e = toNumber(metrics.e);
+      if (e !== null) out.sessionEnergy = round(e / 10, 1);
+      const d = toNumber(metrics.d);
+      if (d !== null) out.sessionDuration = Math.trunc(d / 10);
+    }
+
+    out.vehicle = decodeVehicle(status, powerW);
+
+    const setpoint = toNumber(dps[DP.currentSetpoint]);
+    if (setpoint !== null) out.currentSetpoint = setpoint;
+    const max = toNumber(dps[DP.maxCurrent]);
+    if (max !== null) out.maxCurrent = max;
+
+    const action = toNumber(dps[DP.plugInAction]);
+    if (action !== null && PLUG_IN_ACTIONS[action] !== undefined) {
+      out.plugInAction = PLUG_IN_ACTIONS[action];
+    }
+
+    const last = parseJsonObject(dps[DP.lastSession]);
+    const c = last ? toNumber(last.c) : null;
+    if (c !== null) out.lastSessionEnergy = round(c / 10, 1);
+
+    const alarm = dps[DP.alarm];
+    if (alarm !== undefined && alarm !== null) {
+      const text = String(alarm).trim();
+      out.alarm = text === "0" ? "" : text;
+    }
+
+    return out;
+  },
+
+  unknownValues(dps: Dps): string[] {
+    const raw = dps[DP.status];
+    if (typeof raw !== "string" || STATUS_MAP[raw.trim().toUpperCase()] !== undefined) return [];
+    return [`status ${JSON.stringify(raw.trim())}`];
+  },
+
+  encode(orderKey: string, value: unknown, dps: Dps): EncodeResult {
+    switch (orderKey) {
+      case "charge": {
+        const on = toBoolean(value);
+        if (on === null)
+          return { ok: false, reason: `charge expects a boolean, got ${String(value)}` };
+        return { ok: true, write: { [DP.charge]: on } };
+      }
+      case "current": {
+        const n = toNumber(value);
+        const max = maxCurrentOf(dps);
+        if (n === null)
+          return { ok: false, reason: `current expects a number, got ${String(value)}` };
+        const amps = Math.round(n);
+        if (amps < MIN_CURRENT_A || amps > max) {
+          return { ok: false, reason: `current must be between ${MIN_CURRENT_A} and ${max} A` };
+        }
+        return { ok: true, write: { [DP.currentSetpoint]: amps } };
+      }
+      case "plugInAction": {
+        const index = PLUG_IN_ACTIONS.indexOf(value as (typeof PLUG_IN_ACTIONS)[number]);
+        if (index < 0) {
+          return {
+            ok: false,
+            reason: `plugInAction must be one of ${PLUG_IN_ACTIONS.join(", ")}`,
+          };
+        }
+        return { ok: true, write: { [DP.plugInAction]: index } };
+      }
+      default:
+        return { ok: false, reason: `unknown order ${orderKey}` };
+    }
+  },
+
+  energyStep(prev: EnergyState | null, dps: Dps): EnergyStep | null {
+    const metrics = parseJsonObject(dps[DP.metrics]);
+    const counter = metrics ? toNumber(metrics.e) : null;
+    if (counter === null) return null;
+
+    const rawRecord = dps[DP.lastSession];
+    const record = typeof rawRecord === "string" ? rawRecord : null;
+
+    // First read after start: the session so far may already be in the history.
+    if (prev === null) return { deltaWh: 0, next: { counter, lastRecord: record } };
+
+    // The record is only taken at the baseline and at a drop: a record that
+    // arrives before the counter resets must still be seen as new at the drop.
+    let tenths: number;
+    let lastRecord = prev.lastRecord;
+    if (counter >= prev.counter) {
+      tenths = counter - prev.counter;
+    } else {
+      lastRecord = record ?? prev.lastRecord;
+      // A new session started. Credit the unseen end of the previous one when
+      // its completed-session record changed since last seen.
+      tenths = counter;
+      if (record !== null && record !== prev.lastRecord) {
+        const closed = parseJsonObject(record);
+        const c = closed ? toNumber(closed.c) : null;
+        if (c !== null) tenths += Math.max(0, c - prev.counter);
+      }
+    }
+    return {
+      deltaWh: Math.max(0, Math.round(tenths * 100)),
+      next: { counter, lastRecord },
+    };
+  },
+};

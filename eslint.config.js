@@ -16,7 +16,12 @@ export default tseslint.config(
     },
   },
   {
-    files: ["src/**/*.test.ts"],
+    // Command-line tools talk to a terminal, not to Sowel's logger.
+    files: ["src/tools/**/*.ts"],
+    rules: { "no-console": "off" },
+  },
+  {
+    files: ["src/**/*.test.ts", "src/**/*.testing.ts"],
     rules: { "@typescript-eslint/no-explicit-any": "off" },
   },
 );
