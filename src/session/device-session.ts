@@ -162,8 +162,13 @@ export class DeviceSession {
         return;
       }
     }
-    this.log.warn({ orderKey, value }, "Order not reflected by the device");
-    throw new Error(`Order ${orderKey} not reflected after ${VERIFY_ATTEMPTS} s`);
+    const why = this.opts.profile.whyNotReflected?.(orderKey, value, this.cache) ?? null;
+    this.log.warn({ orderKey, value, why }, "Order not reflected by the device");
+    throw new Error(
+      why
+        ? `Order ${orderKey} not reflected: ${why}`
+        : `Order ${orderKey} not reflected after ${VERIFY_ATTEMPTS} s`,
+    );
   }
 
   // ── Connection ─────────────────────────────────────────────────────
@@ -335,8 +340,9 @@ export class DeviceSession {
       if (!(key in this.published) || this.published[key] !== value) payload[key] = value;
     }
     // A new measurement from the device refreshes the live keys, unchanged or
-    // not. A full read returning the same stale measurement refreshes nothing.
-    if (liveChanged) {
+    // not. A full read returning the same stale measurement refreshes nothing,
+    // unless the values are known from the state (0 W when not charging).
+    if (liveChanged || profile.liveIsDerived?.(this.cache)) {
       for (const key of profile.liveKeys ?? []) {
         if (key in decoded) payload[key] = decoded[key];
       }

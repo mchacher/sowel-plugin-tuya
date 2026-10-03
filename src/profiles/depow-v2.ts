@@ -15,6 +15,7 @@ const DP = {
   metrics: "102",
   alarm: "104",
   lastSession: "105",
+  chargerInfo: "106",
   status: "109",
   charge: "140",
   currentSetpoint: "150",
@@ -255,6 +256,24 @@ export const depowV2: ProductProfile = {
     }
 
     return out;
+  },
+
+  liveIsDerived(dps: Dps): boolean {
+    return !isCharging(dps);
+  },
+
+  whyNotReflected(orderKey: string, value: unknown, dps: Dps): string | null {
+    if (orderKey !== "charge" || toBoolean(value) !== true) return null;
+    // IEC 61851 state B (pilot about 9 V): a vehicle is there and is not asking
+    // for current. The charger cannot make it draw.
+    const info = parseJsonObject(dps[DP.chargerInfo]);
+    const cp = info ? toNumber(info.cp) : null;
+    if (cp !== null && cp >= 8 && cp <= 10.5) {
+      return "the vehicle is not asking for current (battery full, or charging scheduled on the vehicle)";
+    }
+    if (rawStatusOf(dps) === "IDLE" || rawStatusOf(dps) === "SLEEP")
+      return "no vehicle is plugged in";
+    return null;
   },
 
   unknownValues(dps: Dps): string[] {

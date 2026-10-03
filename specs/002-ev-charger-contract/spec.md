@@ -45,3 +45,8 @@ Two behaviours of the charger changed the implementation:
 
 - **No reply to a write that changes nothing.** Writing DP 140 = false on a charger already stopped gets no answer, and tuyapi's `set()` waited for one until its timeout, so the order failed. Writes no longer wait for a reply; the session's read-back verification (spec 001 FR-16) is the proof.
 - **The car may decline to draw.** Restarting a paused charge took the charger PAUSE → WORKING → IDLEINS: it obeyed, the car (full, or on its own schedule) did not draw. Start is now confirmed when the charger delivers, or when it left the state it was in without pausing; a start that changes nothing (already IDLEINS, car not drawing) is still reported as not reflected, which is true.
+
+**Candidate-instance test run (2026-10-03, v0.2.1).** Driving a Sowel candidate with this plugin showed two more things, fixed in v0.2.1:
+
+- **An idle charger read as "outdated".** Not charging, the charger stops pushing DP 102, so the 0 W it was last given aged out and Sowel showed "old measurement". While the charger does not charge, its power and current are known from its state, not measured; the profile says so (`liveIsDerived`) and the live keys are republished on every read.
+- **"Not reflected after 8 s" told the user nothing.** When a start is refused because the car does not ask for current (pilot about 9 V, IEC state B: battery full or charging scheduled on the vehicle) or because no car is plugged in, the rejection now says so (`whyNotReflected`). Seen on the hardware: pilot 9.6 V, charger ready (DP 101 = 200), car not drawing.
