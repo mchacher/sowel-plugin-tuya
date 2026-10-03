@@ -51,6 +51,14 @@ export interface ProductProfile {
   readonly liveKeys?: readonly string[];
   /** The DPs carrying them: the live keys are republished when one of these changed. */
   readonly liveDps?: readonly string[];
+  /**
+   * True when the live values are known from the device's state rather than
+   * measured (a charger that does not charge draws 0 W): they are then
+   * republished on every read, as no new measurement will come to refresh them.
+   */
+  liveIsDerived?(dps: Dps): boolean;
+  /** Why an order was not reflected, in the user's terms, when the profile can tell. */
+  whyNotReflected?(orderKey: string, value: unknown, dps: Dps): string | null;
   /** DP ids this profile requires, for the mismatch log line. */
   readonly requiredDps: readonly string[];
   /** Declared once, from the first snapshot that matched (ranges may come from the device). */

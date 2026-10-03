@@ -162,6 +162,15 @@ describe("DeviceSession — start and publish", () => {
     h.session.stop();
   });
 
+  it("republishes 0 W on every read while the charger does not charge", async () => {
+    const h = harness({ ...reference, "109": "IDLEINS" }, 30);
+    h.session.start();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(30_000); // a poll returning the same snapshot
+    expect(lastData(h)).toEqual({ power: 0, current: 0, voltage: 227 });
+    h.session.stop();
+  });
+
   it("does not refresh the live measurements on an unrelated change", async () => {
     const h = harness();
     h.session.start();
@@ -449,6 +458,20 @@ describe("DeviceSession — orders", () => {
       (c) => c[1] === "Order not reflected by the device",
     );
     expect(notReflected).toHaveLength(0);
+  });
+
+  it("says why a start was not reflected when the profile knows", async () => {
+    const h = await online({
+      ...reference,
+      "109": "IDLEINS",
+      "106": JSON.stringify({ cp: "9.6" }),
+    });
+    h.transport.echo = false;
+    const done = h.session.executeOrder("charge", true);
+    const assertion = expect(done).rejects.toThrow("the vehicle is not asking for current");
+    await vi.advanceTimersByTimeAsync(8_000);
+    await assertion;
+    h.session.stop();
   });
 
   it("rejects while offline without writing", async () => {

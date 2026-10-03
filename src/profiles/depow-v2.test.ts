@@ -222,6 +222,25 @@ describe("depow_v2 encode", () => {
     expect(on.confirm!({ "109": "WORKING" })).toBe(true);
   });
 
+  it("explains a start the vehicle does not take (pilot in state B)", () => {
+    const plugged = {
+      ...charging(),
+      "109": "IDLEINS",
+      "106": JSON.stringify({ r: "Type B", fv: "1.9.13", cp: "9.6" }),
+    };
+    expect(depowV2.whyNotReflected!("charge", true, plugged)).toContain("not asking for current");
+    expect(
+      depowV2.whyNotReflected!("charge", true, { ...plugged, "109": "IDLE", "106": "{}" }),
+    ).toBe("no vehicle is plugged in");
+    expect(depowV2.whyNotReflected!("charge", false, plugged)).toBeNull();
+    expect(depowV2.whyNotReflected!("current", 10, plugged)).toBeNull();
+  });
+
+  it("derives the live values only when not charging", () => {
+    expect(depowV2.liveIsDerived!(charging())).toBe(false);
+    expect(depowV2.liveIsDerived!({ ...charging(), "109": "IDLEINS" })).toBe(true);
+  });
+
   it.each([
     ["ON", true],
     ["off", false],

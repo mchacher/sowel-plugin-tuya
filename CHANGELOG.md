@@ -2,6 +2,11 @@
 
 All notable changes to this plugin. Versions follow semver; the registry in `mchacher/sowel` carries the SHA256 of each released tarball.
 
+## v0.2.1
+
+- **An idle charger no longer reads as "old measurement"**: while it does not charge, its 0 W is known, and republished on every read.
+- **A refused start says why**: "the vehicle is not asking for current (battery full, or charging scheduled on the vehicle)", or "no vehicle is plugged in", instead of "not reflected after 8 s".
+
 ## v0.2.0
 
 **The dé charger is a Sowel EV charger.** The vehicle state, the charging current and the session energy are published under the categories of Sowel's new `ev_charger` equipment type (core spec 182), so Sowel recognises the charger and binds it on its own. The current order's range comes from the charger (DP 152).
