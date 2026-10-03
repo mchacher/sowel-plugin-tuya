@@ -48,6 +48,12 @@ describe("depow_v2 decode", () => {
     expect(out.vehicle).toBe("connected");
   });
 
+  it("derives charge from the work state when DP 140 is not reported", () => {
+    expect(depowV2.decode(charging()).charge).toBe(true);
+    expect(depowV2.decode({ ...charging(), "109": "PAUSE" }).charge).toBe(false);
+    expect(depowV2.decode({ ...charging(), "109": "FOO" })).not.toHaveProperty("charge");
+  });
+
   it("treats DP 140 true as an active charge whatever DP 109 says", () => {
     const out = depowV2.decode({ ...charging(), "109": "IDLEINS", "140": true });
     expect(out.power).toBe(1975);
@@ -136,12 +142,13 @@ describe("depow_v2 decode", () => {
 describe("depow_v2 on the owner's charger (firmware 1.9.13)", () => {
   const owner = JSON.parse(
     readFileSync(new URL("./__fixtures__/depow-v2/owner-fw1.9.13.json", import.meta.url), "utf8"),
-  ) as { unplugged: Dps };
+  ) as { unplugged: Dps; charging: Dps; paused: Dps };
 
   it("matches and decodes the unplugged capture", () => {
     expect(depowV2.match(owner.unplugged)).toBe(true);
     expect(depowV2.decode(owner.unplugged)).toEqual({
       status: "sleep",
+      charge: false,
       vehicle: "disconnected",
       voltage: 224,
       current: 0,
@@ -154,13 +161,46 @@ describe("depow_v2 on the owner's charger (firmware 1.9.13)", () => {
     });
     expect(depowV2.unknownValues!(owner.unplugged)).toEqual([]);
   });
+
+  it("decodes the charging capture (8 A setpoint, DP 140 absent)", () => {
+    const out = depowV2.decode(owner.charging);
+    expect(owner.charging["140"]).toBeUndefined();
+    expect(out).toMatchObject({
+      status: "charging",
+      charge: true,
+      vehicle: "charging",
+      voltage: 227,
+      current: 7.4,
+      power: 1680,
+      currentSetpoint: 8,
+      sessionEnergy: 0.3,
+    });
+  });
+
+  it("decodes the paused capture with no power", () => {
+    expect(depowV2.decode(owner.paused)).toMatchObject({
+      status: "paused",
+      charge: false,
+      vehicle: "connected",
+      power: 0,
+      current: 0,
+    });
+  });
 });
 
 describe("depow_v2 encode", () => {
   const dps = charging();
 
-  it("encodes charge", () => {
-    expect(depowV2.encode("charge", true, dps)).toEqual({ ok: true, write: { "140": true } });
+  it("encodes charge, confirmed by the work state since DP 140 is never echoed", () => {
+    const on = depowV2.encode("charge", true, dps);
+    const off = depowV2.encode("charge", false, dps);
+    if (!on.ok || !off.ok) throw new Error("refused");
+    expect(on.write).toEqual({ "140": true });
+    expect(off.write).toEqual({ "140": false });
+    expect(on.confirm!({ "109": "WORKING" })).toBe(true);
+    expect(on.confirm!({ "109": "IDLEINS" })).toBe(false);
+    expect(off.confirm!({ "109": "PAUSE" })).toBe(true);
+    expect(off.confirm!({ "109": "WORKING" })).toBe(false);
   });
 
   it("encodes a current within range, off the advertised shortcuts", () => {

@@ -126,8 +126,37 @@ describe("DeviceSession — start and publish", () => {
     h.session.start();
     await vi.advanceTimersByTimeAsync(0);
     h.transport.push({ "102": metrics(52, [2300, 87, 19]) });
-    // Only DP 102 moved: voltage, power and its session duration; nothing else.
-    expect(lastData(h)).toEqual({ voltage: 230, power: 2001, sessionDuration: 100 });
+    // Only DP 102 moved: voltage, power and its session duration, plus the
+    // unchanged live current republished with them; nothing else.
+    expect(lastData(h)).toEqual({ voltage: 230, power: 2001, sessionDuration: 100, current: 8.7 });
+    h.session.stop();
+  });
+
+  it("republishes the live measurements with any real update", async () => {
+    const h = harness();
+    h.session.start();
+    await vi.advanceTimersByTimeAsync(0);
+    // Steady charge: same L1, only the session duration moved.
+    h.transport.push({
+      "102": JSON.stringify({
+        L1: [2270, 87, 19],
+        L2: [0, 0, 0],
+        L3: [0, 0, 0],
+        t: 510,
+        e: 52,
+        d: 95190,
+      }),
+    });
+    expect(lastData(h)).toEqual({ sessionDuration: 9519, power: 1975, current: 8.7, voltage: 227 });
+    h.session.stop();
+  });
+
+  it("does not refresh the live measurements on an unrelated change", async () => {
+    const h = harness();
+    h.session.start();
+    await vi.advanceTimersByTimeAsync(0);
+    h.transport.push({ "150": 12 });
+    expect(lastData(h)).toEqual({ currentSetpoint: 12 });
     h.session.stop();
   });
 
@@ -145,9 +174,9 @@ describe("DeviceSession — start and publish", () => {
     h.session.start();
     await vi.advanceTimersByTimeAsync(0);
     h.transport.push({ "102": metrics(11) });
-    expect(lastData(h)).toEqual({ sessionEnergy: 1.1, energy: 100 });
+    expect(lastData(h)).toMatchObject({ sessionEnergy: 1.1, energy: 100 });
     h.transport.push({ "102": metrics(12) });
-    expect(lastData(h)).toEqual({ sessionEnergy: 1.2, energy: 100 });
+    expect(lastData(h)).toMatchObject({ sessionEnergy: 1.2, energy: 100 });
     h.session.stop();
   });
 
@@ -349,13 +378,25 @@ describe("DeviceSession — orders", () => {
   it("resolves once the device reflects the order", async () => {
     const h = await online();
     h.transport.echo = false;
-    const done = h.session.executeOrder("charge", true);
+    const done = h.session.executeOrder("current", 12);
     await vi.advanceTimersByTimeAsync(1_000);
-    h.transport.state = { ...h.transport.state, "140": true };
+    h.transport.state = { ...h.transport.state, "150": 12 };
     await vi.advanceTimersByTimeAsync(1_000);
     await expect(done).resolves.toBeUndefined();
-    expect(lastData(h)).toMatchObject({ charge: true });
-    expect(h.transport.set).toHaveBeenCalledWith({ "140": true });
+    expect(lastData(h)).toMatchObject({ currentSetpoint: 12 });
+    h.session.stop();
+  });
+
+  it("confirms a stop by the work state, as the device never echoes DP 140", async () => {
+    const h = await online();
+    h.transport.echo = false; // DP 140 never comes back, like on the real charger
+    const done = h.session.executeOrder("charge", false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.transport.set).toHaveBeenCalledWith({ "140": false });
+    h.transport.push({ "109": "PAUSE", "101": 204 });
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expect(done).resolves.toBeUndefined();
+    expect(lastData(h)).toMatchObject({ status: "paused", charge: false, power: 0 });
     h.session.stop();
   });
 

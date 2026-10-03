@@ -92,6 +92,11 @@ function maxCurrentOf(dps: Dps): number {
   return max !== null && max >= MIN_CURRENT_A ? max : DEFAULT_MAX_CURRENT_A;
 }
 
+function isWorking(dps: Dps): boolean {
+  const raw = dps[DP.status];
+  return typeof raw === "string" && raw.trim().toUpperCase() === "WORKING";
+}
+
 /** A charge is active when DP 109 says WORKING or DP 140 says true (spec FR-11). */
 function isCharging(dps: Dps): boolean {
   const raw = dps[DP.status];
@@ -117,6 +122,8 @@ export const depowV2: ProductProfile = {
   manufacturer: "dé",
   model: "Portable EV charger 3.7 kW",
   requiredDps: REQUIRED_DPS,
+  liveKeys: ["power", "current", "voltage"],
+  liveDps: [DP.metrics],
 
   match(dps: Dps): boolean {
     return REQUIRED_DPS.every((id) => dps[id] !== undefined && dps[id] !== null);
@@ -170,8 +177,11 @@ export const depowV2: ProductProfile = {
     const status = decodeStatus(dps[DP.status]);
     if (status !== undefined) out.status = status;
 
+    // DP 140 when the device reports it; otherwise the work state, since
+    // firmware 1.9.13 accepts DP 140 writes but never reports the DP.
     const charge = toBoolean(dps[DP.charge]);
     if (charge !== null) out.charge = charge;
+    else if (status !== undefined && status !== "unknown") out.charge = status === "charging";
 
     let powerW: number | undefined;
     const metrics = parseJsonObject(dps[DP.metrics]);
@@ -235,7 +245,12 @@ export const depowV2: ProductProfile = {
         const on = toBoolean(value);
         if (on === null)
           return { ok: false, reason: `charge expects a boolean, got ${String(value)}` };
-        return { ok: true, write: { [DP.charge]: on } };
+        // DP 140 is write-only on firmware 1.9.13: the proof is the work state.
+        return {
+          ok: true,
+          write: { [DP.charge]: on },
+          confirm: (state: Dps) => isWorking(state) === on,
+        };
       }
       case "current": {
         const n = toNumber(value);

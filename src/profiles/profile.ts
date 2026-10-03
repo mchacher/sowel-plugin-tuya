@@ -11,7 +11,18 @@ import type { DiscoveredDevice } from "../sowel-api.js";
 /** A DP snapshot as the device reports it: DP id (string) → raw value. */
 export type Dps = Record<string, unknown>;
 
-export type EncodeResult = { ok: true; write: Dps } | { ok: false; reason: string };
+export type EncodeResult =
+  | {
+      ok: true;
+      write: Dps;
+      /**
+       * How to tell the order took effect, when the written DP is not echoed
+       * back (the dé charger never reports DP 140). Absent: the written DPs
+       * must read back with the written values.
+       */
+      confirm?: (dps: Dps) => boolean;
+    }
+  | { ok: false; reason: string };
 
 /** Memory the energy reducer carries from one snapshot to the next. */
 export interface EnergyState {
@@ -32,6 +43,14 @@ export interface ProductProfile {
   readonly model: string;
   /** True when the snapshot carries every DP this profile needs. */
   match(dps: Dps): boolean;
+  /**
+   * Live measurements republished with every real update even when unchanged,
+   * so their consumers see them as fresh: the core's arbiter ignores a load's
+   * draw older than 120 s, and a steady charge keeps the same wattage.
+   */
+  readonly liveKeys?: readonly string[];
+  /** The DPs carrying them: the live keys are republished when one of these changed. */
+  readonly liveDps?: readonly string[];
   /** DP ids this profile requires, for the mismatch log line. */
   readonly requiredDps: readonly string[];
   discovery(sourceId: string): DiscoveredDevice;

@@ -142,8 +142,11 @@ export class DeviceSession {
 
     // Pushes update the cache too, so it is checked whether or not a read-back
     // succeeds: the device often reports the new value on its own first.
+    const { confirm } = encoded;
     const reflected = (): boolean =>
-      Object.entries(encoded.write).every(([dp, v]) => sameValue(this.cache[dp], v));
+      confirm
+        ? confirm(this.cache)
+        : Object.entries(encoded.write).every(([dp, v]) => sameValue(this.cache[dp], v));
     for (let attempt = 1; attempt <= VERIFY_ATTEMPTS; attempt++) {
       await sleep(VERIFY_DELAY_MS);
       if (this.stopped) throw new Error(`Order ${orderKey} interrupted: plugin stopped`);
@@ -279,6 +282,9 @@ export class DeviceSession {
   }
 
   private handleSnapshot(dps: Dps): void {
+    const liveChanged = (this.opts.profile.liveDps ?? []).some(
+      (dp) => dp in dps && dps[dp] !== this.cache[dp],
+    );
     this.cache = { ...this.cache, ...dps };
     const { profile, deviceManager, integrationId, sourceId } = this.opts;
 
@@ -323,6 +329,13 @@ export class DeviceSession {
     const payload: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(decoded)) {
       if (!(key in this.published) || this.published[key] !== value) payload[key] = value;
+    }
+    // A new measurement from the device refreshes the live keys, unchanged or
+    // not. A full read returning the same stale measurement refreshes nothing.
+    if (liveChanged) {
+      for (const key of profile.liveKeys ?? []) {
+        if (key in decoded) payload[key] = decoded[key];
+      }
     }
     this.published = { ...this.published, ...decoded };
 
