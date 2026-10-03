@@ -8,6 +8,42 @@
   "repo": "mchacher/sowel-plugin-tuya",
   "author": "mchacher",
   "sowelVersion": ">=1.71.0",
-  "settings": [],
+  "settings": [
+    {
+      "key": "host",
+      "label": "Adresse IP de l'appareil",
+      "type": "text",
+      "required": true,
+      "placeholder": "192.168.1.50"
+    },
+    {
+      "key": "device_id",
+      "label": "Device ID Tuya",
+      "type": "text",
+      "required": true
+    },
+    {
+      "key": "local_key",
+      "label": "Local key",
+      "type": "password",
+      "required": true
+    },
+    {
+      "key": "protocol_version",
+      "label": "Version du protocole (3.3, 3.4, 3.5)",
+      "type": "text",
+      "required": false,
+      "defaultValue": "3.5",
+      "placeholder": "3.5"
+    },
+    {
+      "key": "poll_interval",
+      "label": "Relecture complète (secondes)",
+      "type": "number",
+      "required": false,
+      "defaultValue": "30",
+      "placeholder": "30"
+    }
+  ],
   "apiVersion": 2
 }
