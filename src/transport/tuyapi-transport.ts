@@ -118,7 +118,13 @@ export class TuyapiTransport implements TuyaTransport {
   async set(dps: Dps): Promise<void> {
     const device = this.connected();
     await withTimeout(
-      device.set({ multiple: true, data: dps as Record<string, string | number | boolean> }),
+      // No wait for the device's reply: it sends none when the value does not
+      // change (seen on the dé charger), and the session verifies by read-back.
+      device.set({
+        multiple: true,
+        data: dps as Record<string, string | number | boolean>,
+        shouldWaitForResponse: false,
+      }),
       REQUEST_TIMEOUT_MS,
       "Timeout waiting for the write acknowledgement",
     );

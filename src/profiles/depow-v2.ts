@@ -77,8 +77,13 @@ function toNumber(raw: unknown): number | null {
 
 function toBoolean(raw: unknown): boolean | null {
   if (typeof raw === "boolean") return raw;
-  if (raw === 1 || raw === "1" || raw === "true") return true;
-  if (raw === 0 || raw === "0" || raw === "false") return false;
+  if (raw === 1 || raw === 0) return raw === 1;
+  if (typeof raw === "string") {
+    // Sowel's on/off surfaces send "ON"/"OFF" (spec 002 FR5).
+    const s = raw.trim().toLowerCase();
+    if (s === "1" || s === "true" || s === "on") return true;
+    if (s === "0" || s === "false" || s === "off") return false;
+  }
   return null;
 }
 
@@ -90,6 +95,11 @@ function round(value: number, digits: number): number {
 function maxCurrentOf(dps: Dps): number {
   const max = toNumber(dps[DP.maxCurrent]);
   return max !== null && max >= MIN_CURRENT_A ? max : DEFAULT_MAX_CURRENT_A;
+}
+
+function rawStatusOf(dps: Dps): string {
+  const raw = dps[DP.status];
+  return typeof raw === "string" ? raw.trim().toUpperCase() : "";
 }
 
 function isWorking(dps: Dps): boolean {
@@ -129,7 +139,7 @@ export const depowV2: ProductProfile = {
     return REQUIRED_DPS.every((id) => dps[id] !== undefined && dps[id] !== null);
   },
 
-  discovery(sourceId: string): DiscoveredDevice {
+  discovery(sourceId: string, dps: Dps): DiscoveredDevice {
     return {
       friendlyName: sourceId,
       manufacturer: this.manufacturer,
@@ -137,14 +147,20 @@ export const depowV2: ProductProfile = {
       powerSource: "mains",
       data: [
         { key: "status", type: "enum", category: "generic", enumValues: STATUS_VALUES },
-        { key: "vehicle", type: "enum", category: "generic", enumValues: [...VEHICLE_VALUES] },
+        // Core spec 182 — the EV charger contract categories (spec 002).
+        {
+          key: "vehicle",
+          type: "enum",
+          category: "ev_vehicle_state",
+          enumValues: [...VEHICLE_VALUES],
+        },
         { key: "charge", type: "boolean", category: "appliance_state" },
         { key: "power", type: "number", category: "power", unit: "W" },
         { key: "energy", type: "number", category: "energy", unit: "Wh" },
         { key: "current", type: "number", category: "current", unit: "A" },
         { key: "voltage", type: "number", category: "voltage", unit: "V" },
         { key: "temperature", type: "number", category: "temperature_device", unit: "°C" },
-        { key: "currentSetpoint", type: "number", category: "generic", unit: "A" },
+        { key: "currentSetpoint", type: "number", category: "ev_charge_current", unit: "A" },
         { key: "maxCurrent", type: "number", category: "generic", unit: "A" },
         {
           key: "plugInAction",
@@ -152,18 +168,26 @@ export const depowV2: ProductProfile = {
           category: "generic",
           enumValues: [...PLUG_IN_ACTIONS],
         },
-        { key: "sessionEnergy", type: "number", category: "generic", unit: "kWh" },
+        { key: "sessionEnergy", type: "number", category: "ev_session_energy", unit: "kWh" },
         { key: "sessionDuration", type: "number", category: "generic", unit: "s" },
         { key: "lastSessionEnergy", type: "number", category: "generic", unit: "kWh" },
         { key: "alarm", type: "string", category: "generic" },
       ],
       orders: [
-        { key: "charge", type: "boolean", category: "toggle_power" },
+        // Wire values let the core map the "ON"/"OFF" its surfaces send.
+        {
+          key: "charge",
+          type: "boolean",
+          category: "toggle_power",
+          valueOn: true,
+          valueOff: false,
+        },
         {
           key: "current",
           type: "number",
+          category: "set_ev_charge_current",
           min: MIN_CURRENT_A,
-          max: DEFAULT_MAX_CURRENT_A,
+          max: maxCurrentOf(dps),
           unit: "A",
         },
         { key: "plugInAction", type: "enum", enumValues: [...PLUG_IN_ACTIONS] },
@@ -246,10 +270,18 @@ export const depowV2: ProductProfile = {
         if (on === null)
           return { ok: false, reason: `charge expects a boolean, got ${String(value)}` };
         // DP 140 is write-only on firmware 1.9.13: the proof is the work state.
+        // Off: the charger no longer delivers. On: it delivers, or it left the
+        // state it was in without pausing — the charger obeyed even when the car
+        // declines to draw (full, or its own schedule), seen on the hardware.
+        const before = rawStatusOf(dps);
         return {
           ok: true,
           write: { [DP.charge]: on },
-          confirm: (state: Dps) => isWorking(state) === on,
+          confirm: (state: Dps) => {
+            if (!on) return !isWorking(state);
+            const now = rawStatusOf(state);
+            return isWorking(state) || (now !== before && now !== "PAUSE");
+          },
         };
       }
       case "current": {

@@ -54,6 +54,8 @@ The device appears under the integration; bind its readings and orders to an equ
 
 Orders: `charge` (start / stop), `current` (6 A to the charger's maximum, 1 A steps), `plugInAction`. An order completes when the charger reads the value back (up to 8 s), and fails with a message otherwise.
 
+Since v0.2.0 the vehicle state, the charging current (reading and order) and the session energy are published under the categories of Sowel's **EV charger** equipment type (core spec 182: `ev_vehicle_state`, `ev_charge_current`, `set_ev_charge_current`, `ev_session_energy`), so the charger is offered and bound as an `ev_charger` on a Sowel release that has the type. On an older Sowel it binds as before.
+
 The plugin decides nothing: charging from solar surplus or off-peak is a recipe's job, through Sowel's energy arbiter.
 
 ## Capturing a device's payloads
