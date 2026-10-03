@@ -53,7 +53,8 @@ export interface ProductProfile {
   readonly liveDps?: readonly string[];
   /** DP ids this profile requires, for the mismatch log line. */
   readonly requiredDps: readonly string[];
-  discovery(sourceId: string): DiscoveredDevice;
+  /** Declared once, from the first snapshot that matched (ranges may come from the device). */
+  discovery(sourceId: string, dps: Dps): DiscoveredDevice;
   /** Readings decoded from one snapshot. Keys whose DP is absent or malformed are omitted. */
   decode(dps: Dps): Record<string, unknown>;
   /**

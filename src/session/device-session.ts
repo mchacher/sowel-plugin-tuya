@@ -311,7 +311,11 @@ export class DeviceSession {
         }
         return;
       }
-      deviceManager.upsertFromDiscovery(integrationId, integrationId, profile.discovery(sourceId));
+      deviceManager.upsertFromDiscovery(
+        integrationId,
+        integrationId,
+        profile.discovery(sourceId, this.cache),
+      );
       this.discovered = true;
     }
 

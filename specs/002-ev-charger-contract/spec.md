@@ -1,6 +1,6 @@
 # Spec 002 — Publish the core EV charger contract
 
-- **Status**: Draft
+- **Status**: Implemented
 - **Date**: 2026-10-03
 - **Related**: core spec 182 (EV charger equipment type, `src/shared/ev-charger-contract.ts` in mchacher/sowel), spec 001 (this plugin's charger profile)
 
@@ -32,7 +32,16 @@ The equipment defines the contract; this plugin adapts to it.
 
 ## Acceptance criteria
 
-- [ ] Discovery declares the categories of FR1-FR5, and the order range from DP 152.
-- [ ] `encode("charge", "ON")` and `encode("charge", "off")` give `{ "140": true }` / `{ "140": false }`.
+- [x] Discovery declares the categories of FR1-FR5, and the order range from DP 152.
+- [x] `encode("charge", "ON")` and `encode("charge", "off")` give `{ "140": true }` / `{ "140": false }`.
 - [ ] On a core ≥ the release carrying spec 182, the dé charger appears in the `ev_charger` device picker and auto-binds the contract aliases (checked against the core's binding tests, which use this plugin's shape).
-- [ ] `npm run validate` and CI green.
+- [x] `npm run validate` and CI green.
+
+## Hardware findings (2026-10-03)
+
+Walked on the owner's charger with v0.2.0: discovery declares the `current` order 6–16 A from DP 152 and the `charge` order with its wire values; `"OFF"` / `"ON"` reach the charger as booleans.
+
+Two behaviours of the charger changed the implementation:
+
+- **No reply to a write that changes nothing.** Writing DP 140 = false on a charger already stopped gets no answer, and tuyapi's `set()` waited for one until its timeout, so the order failed. Writes no longer wait for a reply; the session's read-back verification (spec 001 FR-16) is the proof.
+- **The car may decline to draw.** Restarting a paused charge took the charger PAUSE → WORKING → IDLEINS: it obeyed, the car (full, or on its own schedule) did not draw. Start is now confirmed when the charger delivers, or when it left the state it was in without pausing; a start that changes nothing (already IDLEINS, car not drawing) is still reported as not reflected, which is true.

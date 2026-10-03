@@ -2,9 +2,9 @@
 
 ## Steps
 
-- [ ] 1. `discovery(sourceId, dps)` in the profile interface and the session.
-- [ ] 2. depow_v2: categories, order range, wire values, `on`/`off` accepted.
-- [ ] 3. Tests, README, changelog.
+- [x] 1. `discovery(sourceId, dps)` in the profile interface and the session.
+- [x] 2. depow_v2: categories, order range, wire values, `on`/`off` accepted.
+- [x] 3. Tests, README, changelog.
 
 ## Test plan
 

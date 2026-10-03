@@ -198,9 +198,36 @@ describe("depow_v2 encode", () => {
     expect(on.write).toEqual({ "140": true });
     expect(off.write).toEqual({ "140": false });
     expect(on.confirm!({ "109": "WORKING" })).toBe(true);
-    expect(on.confirm!({ "109": "IDLEINS" })).toBe(false);
+    // From WORKING (the reference snapshot) the charger is already enabled; a
+    // later IDLEINS is the car stopping, not a refused order.
+    expect(on.confirm!({ "109": "IDLEINS" })).toBe(true);
+    expect(on.confirm!({ "109": "PAUSE" })).toBe(false);
     expect(off.confirm!({ "109": "PAUSE" })).toBe(true);
     expect(off.confirm!({ "109": "WORKING" })).toBe(false);
+  });
+
+  it("confirms a restart the car declines: the charger left PAUSE without charging", () => {
+    const paused = { ...charging(), "109": "PAUSE" };
+    const on = depowV2.encode("charge", true, paused);
+    if (!on.ok) throw new Error("refused");
+    expect(on.confirm!({ "109": "IDLEINS" })).toBe(true);
+    expect(on.confirm!({ "109": "PAUSE" })).toBe(false);
+  });
+
+  it("does not confirm a start that changed nothing", () => {
+    const plugged = { ...charging(), "109": "IDLEINS" };
+    const on = depowV2.encode("charge", true, plugged);
+    if (!on.ok) throw new Error("refused");
+    expect(on.confirm!({ "109": "IDLEINS" })).toBe(false);
+    expect(on.confirm!({ "109": "WORKING" })).toBe(true);
+  });
+
+  it.each([
+    ["ON", true],
+    ["off", false],
+    ["On", true],
+  ])("accepts Sowel's %s for charge", (value, on) => {
+    expect(depowV2.encode("charge", value, dps)).toMatchObject({ ok: true, write: { "140": on } });
   });
 
   it("encodes a current within range, off the advertised shortcuts", () => {
@@ -239,7 +266,7 @@ describe("depow_v2 encode", () => {
 
 describe("depow_v2 discovery", () => {
   it("declares the device with its 15 readings and 3 orders", () => {
-    const d = depowV2.discovery("abc");
+    const d = depowV2.discovery("abc", charging());
     expect(d.friendlyName).toBe("abc");
     expect(d.manufacturer).toBe("dé");
     expect(d.data).toHaveLength(15);
@@ -248,12 +275,43 @@ describe("depow_v2 discovery", () => {
     expect(cat("power")).toBe("power");
     expect(cat("energy")).toBe("energy");
     expect(cat("charge")).toBe("appliance_state");
-    expect(cat("sessionEnergy")).toBe("generic");
+    expect(cat("sessionEnergy")).toBe("ev_session_energy");
     expect(d.orders.find((o) => o.key === "charge")?.category).toBe("toggle_power");
   });
 
+  it("publishes the core EV charger contract categories (spec 002)", () => {
+    const d = depowV2.discovery("abc", charging());
+    const cat = (key: string) => d.data.find((x) => x.key === key)?.category;
+    expect(cat("vehicle")).toBe("ev_vehicle_state");
+    expect(cat("currentSetpoint")).toBe("ev_charge_current");
+    expect(cat("sessionEnergy")).toBe("ev_session_energy");
+    // Unchanged.
+    expect(cat("charge")).toBe("appliance_state");
+    expect(cat("power")).toBe("power");
+    expect(cat("energy")).toBe("energy");
+    expect(cat("temperature")).toBe("temperature_device");
+    const order = (key: string) => d.orders.find((o) => o.key === key);
+    expect(order("current")).toMatchObject({ category: "set_ev_charge_current", min: 6, max: 16 });
+    expect(order("charge")).toMatchObject({
+      category: "toggle_power",
+      valueOn: true,
+      valueOff: false,
+    });
+  });
+
+  it.each([
+    [16, 16],
+    [32, 32],
+    [undefined, 16],
+  ])("bounds the current order by DP 152 = %s → max %s", (dp152, max) => {
+    const dps = charging();
+    if (dp152 === undefined) delete dps["152"];
+    else dps["152"] = dp152;
+    expect(depowV2.discovery("abc", dps).orders.find((o) => o.key === "current")?.max).toBe(max);
+  });
+
   it("declares every key decode can produce", () => {
-    const declared = new Set(depowV2.discovery("abc").data.map((x) => x.key));
+    const declared = new Set(depowV2.discovery("abc", charging()).data.map((x) => x.key));
     const full = depowV2.decode({ ...charging(), "140": true, "154": 1, "104": "" });
     for (const key of Object.keys(full)) expect(declared.has(key)).toBe(true);
   });

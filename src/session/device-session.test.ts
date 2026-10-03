@@ -91,6 +91,17 @@ describe("DeviceSession — start and publish", () => {
     h.session.stop();
   });
 
+  it("declares the current order's range from the device's DP 152 (spec 002)", async () => {
+    const h = harness({ ...reference, "152": 32 });
+    h.session.start();
+    await vi.advanceTimersByTimeAsync(0);
+    const declared = h.dm.upsertFromDiscovery.mock.calls[0][2] as {
+      orders: { key: string; max?: number }[];
+    };
+    expect(declared.orders.find((o) => o.key === "current")?.max).toBe(32);
+    h.session.stop();
+  });
+
   it("refuses a device that does not match the profile", async () => {
     const state = { ...reference };
     delete state["150"];

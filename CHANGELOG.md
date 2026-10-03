@@ -2,6 +2,13 @@
 
 All notable changes to this plugin. Versions follow semver; the registry in `mchacher/sowel` carries the SHA256 of each released tarball.
 
+## v0.2.0
+
+**The dé charger is a Sowel EV charger.** The vehicle state, the charging current and the session energy are published under the categories of Sowel's new `ev_charger` equipment type (core spec 182), so Sowel recognises the charger and binds it on its own. The current order's range comes from the charger (DP 152).
+
+- **Start/stop from Sowel's buttons**: the order declares its wire values, and the plugin accepts `ON`/`OFF` too.
+- **Fixed on the hardware**: stopping an already stopped charger no longer times out (the charger does not answer a write that changes nothing); restarting a charge the car then declines to draw is reported as done, since the charger obeyed.
+
 ## v0.1.0
 
 First release. **The dé portable EV charger (3.7 kW, 6-16 A, two buttons) in Sowel, over the local network, no cloud at runtime** — spec 001, walked end to end on a real charger (firmware 1.9.13).
