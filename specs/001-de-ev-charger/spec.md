@@ -1,6 +1,6 @@
 # Spec 001 — Local Tuya transport and the dé EV charger profile
 
-- **Status**: Draft
+- **Status**: Implemented — v0.1.0
 - **Date**: 2026-09-29
 - **Related**: core spec 140 (energy capacity arbiter), core spec 111 (plugin soft isolation), core spec 089 (registry), core spec 136 (personal source)
 - **Hardware**: dé portable EV charger, 3.7 kW, 6-16 A, Type 2, Schuko plug, LCD with two buttons (Amazon `B0DGT8PRHH`) — the reference device of [lachand/EV_charger](https://github.com/lachand/EV_charger), DP layout `depow_v2`
