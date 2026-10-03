@@ -100,7 +100,7 @@ This spec is the first feature of `sowel-plugin-tuya`: a local Tuya transport th
 - [ ] No log line, reading or error message contains the `local_key` (tested by running the scenarios with a sentinel key and scanning every logged argument).
 - [ ] Connection loss sets the device `offline` after 60 s and reconnects with backoff; recovery sets it `online`.
 - [ ] `npm run validate` is green; CI is green.
-- [ ] Before v0.1.0: the owner's charger walked end to end (connect, plug, start, set 8 A then 16 A, stop, unplug), its captures added as fixtures, outcome recorded in the PR.
+- [x] Before v0.1.0: the owner's charger walked end to end (connect, plug, start, set 8 A then 16 A, stop, unplug), its captures added as fixtures, outcome recorded in the PR.
 
 ## Edge cases
 
@@ -125,4 +125,6 @@ Recorded on the owner's charger as the walk progresses (spec FR-18).
 
 - **DP 140 is write-only on this firmware.** Writing it stops (PAUSE, relay off, power to 0 within 0.3 s) and restarts the charge, but the DP is never reported. An order may therefore carry its own proof of effect: `charge` is confirmed by the work state (DP 109 `WORKING` for on, anything else for off), and the `charge` reading is derived from the work state whenever DP 140 is absent. Walked: stop confirmed in 1.2 s, restart in 2.3 s (through a transient `IDLEINS`), 8 → 10 → 8 A in 1.3 s each.
 - **DP 102 is pushed, not polled.** A full read returns the last pushed metrics unchanged; the device pushes DP 102 about every 60 s in a steady charge and more often around a state change, and ignores a DP_REFRESH request. The arbiter treats a load's draw older than 120 s as unknown, and a steady charge keeps the same wattage, so the profile declares its live keys (`power`, `current`, `voltage`) and the DP carrying them: they are republished whenever DP 102 changes, unchanged or not, and never on a stale full read. Walked: four minutes of charging, power republished every 60 s.
-- **Energy.** First increment observed: `energy: 100` Wh when the session counter moved from 0.2 to 0.3 kWh. Still to observe: a completed session (DP 105) and a new session after unplugging.
+- **Energy.** First increment observed: `energy: 100` Wh when the session counter moved from 0.2 to 0.3 kWh.
+
+**2026-10-03 — unplug and replug.** Unplugging: `WORKING → IDLEINS` (the car stops drawing, power and current published as 0), then `IDLE`, with a 0.2 s `IDLE ↔ IDLEINS` bounce as the plug comes out. On `IDLE` the charger writes the completed-session record (DP 105: `c` 5, 0.5 kWh over 1 217 s) and resets the session counter to 0. The plugin published `lastSessionEnergy` 0.5 and no energy increment, which is right: every 100 Wh of that session had already been counted. Replugging: `IDLE → IDLEINS → WORKING` in 1.5 s (auto-start), session duration from 0, and the new session's first increment, `energy: 100` Wh at 0.1 kWh, four minutes in. The momentary counter glitch the spec feared was not seen: the counter only reset at the end of a session.

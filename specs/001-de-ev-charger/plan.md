@@ -12,7 +12,7 @@
 - [x] 8. `src/tools/capture.ts`, ESLint override for `src/tools/**`.
 - [x] 9. `manifest.json` settings; README (setup, getting the `local_key`, DHCP reservation, the app's local slot, `DEBUG` warning, supported products); CLAUDE.md `executeOrder` rule.
 - [ ] 10. Open the core issue for the `ev_charger` equipment type and link it from this spec.
-- [ ] 11. Hardware walk and real captures (before v0.1.0, may land in a follow-up PR against this spec).
+- [x] 11. Hardware walk and real captures (before v0.1.0, may land in a follow-up PR against this spec).
 
 Timers in session tests use Vitest fake timers. The transport adapter (step 7) is the only module without unit tests beyond its error classifier: it is exercised by the hardware walk.
 
