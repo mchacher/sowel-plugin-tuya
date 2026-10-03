@@ -140,16 +140,21 @@ export class DeviceSession {
       throw new Error(`Write failed: ${this.describe(err)}`);
     }
 
+    // Pushes update the cache too, so it is checked whether or not a read-back
+    // succeeds: the device often reports the new value on its own first.
+    const reflected = (): boolean =>
+      Object.entries(encoded.write).every(([dp, v]) => sameValue(this.cache[dp], v));
     for (let attempt = 1; attempt <= VERIFY_ATTEMPTS; attempt++) {
       await sleep(VERIFY_DELAY_MS);
       if (this.stopped) throw new Error(`Order ${orderKey} interrupted: plugin stopped`);
-      try {
-        await this.enqueue(() => this.readAll());
-      } catch (err) {
-        this.log.debug({ attempt, error: this.describe(err) }, "Read-back failed");
-        continue;
+      if (!reflected()) {
+        try {
+          await this.enqueue(() => this.readAll());
+        } catch (err) {
+          this.log.debug({ attempt, error: this.describe(err) }, "Read-back failed");
+        }
       }
-      if (Object.entries(encoded.write).every(([dp, v]) => sameValue(this.cache[dp], v))) {
+      if (reflected()) {
         this.log.info({ orderKey, value, attempt }, "Order applied");
         return;
       }

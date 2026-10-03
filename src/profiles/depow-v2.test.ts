@@ -133,6 +133,29 @@ describe("depow_v2 decode", () => {
   });
 });
 
+describe("depow_v2 on the owner's charger (firmware 1.9.13)", () => {
+  const owner = JSON.parse(
+    readFileSync(new URL("./__fixtures__/depow-v2/owner-fw1.9.13.json", import.meta.url), "utf8"),
+  ) as { unplugged: Dps };
+
+  it("matches and decodes the unplugged capture", () => {
+    expect(depowV2.match(owner.unplugged)).toBe(true);
+    expect(depowV2.decode(owner.unplugged)).toEqual({
+      status: "sleep",
+      vehicle: "disconnected",
+      voltage: 224,
+      current: 0,
+      power: 0,
+      temperature: 30,
+      sessionEnergy: 0,
+      sessionDuration: 0,
+      currentSetpoint: 16,
+      maxCurrent: 16,
+    });
+    expect(depowV2.unknownValues!(owner.unplugged)).toEqual([]);
+  });
+});
+
 describe("depow_v2 encode", () => {
   const dps = charging();
 

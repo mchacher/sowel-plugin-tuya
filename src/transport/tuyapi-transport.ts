@@ -21,6 +21,15 @@ import { withTimeout } from "../util/timeout.js";
 import type { TransportOptions, TuyaTransport } from "./transport.js";
 
 const CONNECT_TIMEOUT_MS = 10_000;
+/**
+ * Command bytes of a full status reply: DP_QUERY_NEW (3.4, 3.5) and DP_QUERY
+ * (3.3). Matched on the `data` event rather than through `get()`'s promise,
+ * because on 3.5 tuyapi stops resolving `get()` after a `set()` — the reply
+ * arrives, its sequence number no longer matches the resolver (seen on the dé
+ * charger, firmware 1.9.13) — and `get()` can also resolve with an unrelated
+ * partial push.
+ */
+const STATUS_REPLY_COMMANDS = new Set([10, 16]);
 const REQUEST_TIMEOUT_MS = 8_000;
 
 function dpsOf(payload: unknown): Dps | null {
@@ -89,14 +98,21 @@ export class TuyapiTransport implements TuyaTransport {
 
   async getAll(): Promise<Dps> {
     const device = this.connected();
-    const payload: unknown = await withTimeout(
-      device.get({ schema: true }),
-      REQUEST_TIMEOUT_MS,
-      "Timeout waiting for the status reply",
-    );
-    const dps = dpsOf(payload);
-    if (!dps) throw new Error("Unexpected status reply (no dps)");
-    return dps;
+    let listener: ((payload: unknown, commandByte: number) => void) | undefined;
+    const reply = new Promise<Dps>((resolve) => {
+      listener = (payload, commandByte) => {
+        const dps = dpsOf(payload);
+        if (dps && STATUS_REPLY_COMMANDS.has(commandByte)) resolve(dps);
+      };
+      device.on("data", listener);
+    });
+    // The request; its own promise is not trusted (see STATUS_REPLY_COMMANDS).
+    device.get({ schema: true }).catch(() => undefined);
+    try {
+      return await withTimeout(reply, REQUEST_TIMEOUT_MS, "Timeout waiting for the status reply");
+    } finally {
+      if (listener) device.removeListener("data", listener);
+    }
   }
 
   async set(dps: Dps): Promise<void> {

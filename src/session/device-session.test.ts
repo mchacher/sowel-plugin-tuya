@@ -359,6 +359,19 @@ describe("DeviceSession — orders", () => {
     h.session.stop();
   });
 
+  it("resolves from a push even when every read-back fails", async () => {
+    const h = await online();
+    h.transport.echo = false;
+    h.transport.getFailures = Array.from({ length: 8 }, () => new Error("Timeout waiting"));
+    const done = h.session.executeOrder("current", 8);
+    await vi.advanceTimersByTimeAsync(0);
+    h.transport.push({ "150": 8 }); // the device reports the new value on its own
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expect(done).resolves.toBeUndefined();
+    expect(h.transport.getAll).toHaveBeenCalledTimes(1); // no read-back was needed
+    h.session.stop();
+  });
+
   it("rejects when the order is never reflected, and stays online", async () => {
     const h = await online();
     h.transport.echo = false;

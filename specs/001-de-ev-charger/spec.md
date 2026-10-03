@@ -112,3 +112,11 @@ This spec is the first feature of `sowel-plugin-tuya`: a local Tuya transport th
 - **An order while a poll is running.** Queued behind it (FR-4), never interleaved.
 - **`current` written above DP 152.** Refused before any write.
 - **The charger reboots** (power cut). The connection drops, the backoff reconnects, and the first read republishes everything.
+
+## Hardware findings
+
+Recorded on the owner's charger as the walk progresses (spec FR-18).
+
+**2026-10-03 — unplugged, firmware 1.9.13.** Product id `gxrtu5vljdthtd3g`, the reference product; protocol 3.5; the local connection works with no cloud. The profile matches and decodes the capture (fixture `owner-fw1.9.13.json`). Differences from the reference capture: DP 101 reads `101` at rest; DP 102 carries an extra `wt` field; DP 106 carries `cp` — the IEC 61851 pilot voltage (12.6 V with no vehicle), a candidate signal for `vehicle` once the plugged and charging captures confirm 9 V / 6 V; new DP 153, a text log of state and setpoint changes (`"aset: 10A->8A (app)"`); new DP 190 (boolean, meaning unknown). DPs 104, 105, 140 and 154 are absent with no vehicle. None is published until its meaning is established.
+
+**Writes.** `current` 16 → 8 → 10 → 8 A applied and confirmed by read-back in 1.6 s. Two transport defects found and fixed: on 3.5, tuyapi stops resolving `get()` after a `set()` (the reply arrives, its sequence number no longer matches), so the transport takes the status reply from the `data` event (command 16, or 10 on 3.3); and a verification now also accepts the value the device pushes on its own. One anomaly, not reproduced: the very first write was logged by the charger as `aset: 16A->807566790A` and not applied — the verified write rejected it as not reflected, which is the behaviour FR-16 asks for. Watched during the rest of the walk.
